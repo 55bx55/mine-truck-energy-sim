@@ -71,6 +71,18 @@ body {
 }
 .param-row input:focus { outline: 2px solid var(--accent); border-color: transparent; background: #fff; }
 
+/* 车型预设 */
+.preset-row { display: grid; grid-template-columns: 1fr 96px; align-items: center; gap: 8px; margin-bottom: 12px; }
+.preset-row label { font-size: 13px; color: var(--text-sub); }
+.preset-row select {
+  width: 100%; border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 4px; font-size: 13px; background: #f8fafc; color: var(--text);
+}
+
+.panel-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+.btn-run.btn-alt { background: var(--accent-2); margin-top: 10px; }
+
 .btn-run {
   width: 100%; margin-top: 14px; padding: 9px 0; border: none; border-radius: 8px;
   background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
@@ -85,7 +97,7 @@ body {
 .content { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 
 /* 概览卡片 */
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px; }
 .card {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
   padding: 14px 18px;

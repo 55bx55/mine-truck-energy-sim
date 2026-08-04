@@ -39,6 +39,9 @@ class SimulationResult:
     E_total: float           # 工况总能耗 (Wh)
     E_drive_kWh: float       # 驱动能耗 (kWh)
     E_regen_kWh: float       # 回收能量 (kWh)
+    soc: np.ndarray          # SOC 曲线 (0~1)
+    soc_end: float           # 工况结束时 SOC
+    soc_delta_pct: float     # SOC 变化量 (百分点)
     eta_avg_drive_arith: float     # 驱动段平均效率（算术平均）
     eta_avg_drive_weighted: float  # 驱动段平均效率（功率加权）
 
@@ -59,6 +62,9 @@ class SimulationResult:
             "E_total_kWh": round(float(self.E_total) / 1000.0, 3),
             "E_drive_kWh": round(self.E_drive_kWh, 3),
             "E_regen_kWh": round(self.E_regen_kWh, 3),
+            "soc": [round(float(x), 4) for x in self.soc],
+            "soc_end": round(float(self.soc_end), 4),
+            "soc_delta_pct": round(float(self.soc_delta_pct), 3),
             "eta_avg_drive_arith": _f(self.eta_avg_drive_arith),
             "eta_avg_drive_weighted": _f(self.eta_avg_drive_weighted),
         }
@@ -118,6 +124,12 @@ def simulate_cycle(
     E_drive = float(np.sum(P_batt[P_batt > 0]) / 3600.0 / 1000.0)
     E_regen = float(np.sum(np.abs(P_batt[P_batt < 0])) / 3600.0 / 1000.0)
 
+    # ---- 7. SOC 跟踪（电池端能量积分，含效率）----
+    soc_init = getattr(param, "soc_init", 0.9)
+    soc = soc_init - E_cum / 1000.0 / param.batt_capacity_kWh
+    soc_end = float(soc[-1])
+    soc_delta_pct = (soc_end - soc_init) * 100.0
+
     return SimulationResult(
         cycle_name=cycle.name,
         n_motor=n_motor,
@@ -130,6 +142,9 @@ def simulate_cycle(
         E_total=E_total_Wh,
         E_drive_kWh=E_drive,
         E_regen_kWh=E_regen,
+        soc=soc,
+        soc_end=soc_end,
+        soc_delta_pct=soc_delta_pct,
         eta_avg_drive_arith=eta_arith,
         eta_avg_drive_weighted=eta_wtd,
     )

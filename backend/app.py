@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .core import decomposition, sensitivity, simulation
-from .core.cycles import build_default_cycles
+from .core.cycles import build_custom_cycle, build_default_cycles
 from .core.efficiency import MotorEfficiencyMap
 from .core.vehicle import VehicleParams
 
@@ -89,6 +89,7 @@ def meta():
     m = _load_map()
     return {
         "vehicle_params": VehicleParams().to_dict(),
+        "vehicle_presets": VehicleParams.PRESETS,
         "cycles": [c.name for c in _load_cycles()],
         "motor_map": {
             "peak_eta": round(float(m.eta.max()), 4),
@@ -119,18 +120,64 @@ def cycles():
 def simulate(payload: dict):
     """运行仿真。
 
-    body: {"params": {车辆参数字段覆盖}, "cycle_ids": [0, 1, 2]}
+    body: {
+      "params": {车辆参数字段覆盖},
+      "cycle_ids": [0, 1, 2],
+      "custom_cycle": {v: [...], grade: [...], payload: [...], name?: str}  # 可选
+    }
+    当传入 custom_cycle 时，返回结果为 [自定义工况结果]（忽略 cycle_ids）。
     """
     params = _resolve_params(payload.get("params"))
     cycle_ids = payload.get("cycle_ids") or [0, 1, 2]
     all_cycles = _load_cycles()
 
     results = []
-    for cid in cycle_ids:
-        cycle = all_cycles[int(cid)]
+    custom = payload.get("custom_cycle")
+    if custom:
+        cycle = build_custom_cycle(
+            custom["v"], custom["grade"], custom["payload"],
+            name=custom.get("name", "自定义工况"),
+        )
         res = simulation.simulate_cycle(cycle, _load_map(), params)
         results.append(res.to_dict())
+    else:
+        for cid in cycle_ids:
+            cycle = all_cycles[int(cid)]
+            res = simulation.simulate_cycle(cycle, _load_map(), params)
+            results.append(res.to_dict())
     return {"results": results}
+
+
+@app.post("/api/compare")
+def compare(payload: dict):
+    """多车型同工况能耗对比（预设车型 × 工况矩阵）
+
+    body: {"cycle_ids": [0,1,2]}
+    """
+    cycle_ids = payload.get("cycle_ids") or [0, 1, 2]
+    all_cycles = _load_cycles()
+    eff_map = _load_map()
+
+    rows = []
+    for preset in VehicleParams.PRESETS:
+        params = _resolve_params(preset["params"])
+        cells = []
+        for cid in cycle_ids:
+            res = simulation.simulate_cycle(all_cycles[int(cid)], eff_map, params)
+            cells.append({
+                "E_total_kWh": round(res.E_total / 1000.0, 3),
+                "E_drive_kWh": round(res.E_drive_kWh, 3),
+                "E_regen_kWh": round(res.E_regen_kWh, 3),
+                "soc_delta_pct": round(res.soc_delta_pct, 3),
+                "eta_wtd": None if res.eta_avg_drive_weighted != res.eta_avg_drive_weighted
+                            else round(res.eta_avg_drive_weighted, 4),
+            })
+        rows.append({"key": preset["key"], "name": preset["name"], "desc": preset["desc"], "cells": cells})
+    return {
+        "presets": [p["name"] for p in VehicleParams.PRESETS],
+        "cycle_names": [all_cycles[i].name for i in cycle_ids],
+        "rows": rows,
+    }
 
 
 @app.post("/api/sensitivity")
@@ -147,10 +194,17 @@ def run_sensitivity(payload: dict):
 
 @app.post("/api/decompose")
 def decompose(payload: dict):
-    """能量损耗分解"""
+    """能量损耗分解（支持 cycle_id 或 custom_cycle）"""
     params = _resolve_params(payload.get("params"))
-    cycle_id = int(payload.get("cycle_id") or 0)
-    cycle = _load_cycles()[cycle_id]
+    custom = payload.get("custom_cycle")
+    if custom:
+        cycle = build_custom_cycle(
+            custom["v"], custom["grade"], custom["payload"],
+            name=custom.get("name", "自定义工况"),
+        )
+    else:
+        cycle_id = int(payload.get("cycle_id") or 0)
+        cycle = _load_cycles()[cycle_id]
     res = simulation.simulate_cycle(cycle, _load_map(), params)
     return decomposition.decompose_cycle(cycle, res, params).to_dict()
 

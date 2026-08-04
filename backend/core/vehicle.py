@@ -35,10 +35,33 @@ class VehicleParams:
         self.eta_dis = 0.96            # 电池放电基准效率
         self.eta_chg = 0.96            # 电池充电基准效率
         self.batt_capacity_kWh = 300.0  # 电池额定容量 (kWh)
+        self.soc_init = 0.90            # 初始 SOC（运行条件，非车辆固有参数）
 
         # 电机外特性（基速 2000 r/min，峰值转矩 3000 N·m）
         self.n_vec = np.array([0, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000])
         self.T_max_vec = np.array([3000, 3000, 3000, 3000, 3000, 2000, 1500, 1200, 1000])
+
+    # 常用车型预设（按额定载重命名，用于多车型对比）
+    PRESETS = [
+        {
+            "key": "t60",
+            "name": "60 吨级",
+            "desc": "整备 30t / 电池 300 kWh / 减速比 45",
+            "params": {"m_vehicle": 30000, "batt_capacity_kWh": 300, "i_total": 45},
+        },
+        {
+            "key": "t90",
+            "name": "90 吨级",
+            "desc": "整备 42t / 电池 420 kWh / 减速比 40",
+            "params": {"m_vehicle": 42000, "batt_capacity_kWh": 420, "i_total": 40},
+        },
+        {
+            "key": "t110",
+            "name": "110 吨级",
+            "desc": "整备 52t / 电池 520 kWh / 减速比 35",
+            "params": {"m_vehicle": 52000, "batt_capacity_kWh": 520, "i_total": 35},
+        },
+    ]
 
     def to_dict(self) -> dict:
         return {
@@ -55,6 +78,7 @@ class VehicleParams:
             "eta_dis": self.eta_dis,
             "eta_chg": self.eta_chg,
             "batt_capacity_kWh": self.batt_capacity_kWh,
+            "soc_init": self.soc_init,
         }
 
     @classmethod

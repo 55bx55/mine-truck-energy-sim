@@ -29,11 +29,22 @@
       <h2>车辆参数</h2>
       <button class="btn-reset" id="btn-reset" title="恢复默认参数">重置</button>
     </div>
+    <div class="preset-row">
+      <label for="preset-select">车型预设</label>
+      <select id="preset-select">
+        <option value="">手动配置</option>
+      </select>
+    </div>
     <div class="param-group" id="param-group"></div>
     <button class="btn-run" id="btn-run">重新仿真</button>
+
+    <hr class="panel-divider">
+    <h2 style="font-size:15px;margin-bottom:10px">自定义工况</h2>
+    <div class="param-group" id="custom-group"></div>
+    <button class="btn-run btn-alt" id="btn-custom">生成并仿真</button>
+
     <div class="panel-note">
-      <p>参数修改后点击「重新仿真」，右侧全部图表联动更新。</p>
-      <p>整备质量 30 t 对应 60 吨级电动矿卡典型配置。</p>
+      <p>参数修改后点击「重新仿真」，右侧全部图表联动更新；自定义工况生成梯形速度曲线（加速-匀速-减速）并叠加坡度与载重。</p>
     </div>
   </aside>
 
@@ -79,6 +90,13 @@
       <h3>参数敏感性分析（Tornado）</h3>
       <p class="chart-desc">基准工况为重载上坡；对载重质量、滚动阻力系数、传动效率、主减速比做 ±20% 单因素摄动，考察工况总能耗变化率。条长越长，该参数对能耗影响越大。</p>
       <div id="chart-sens" class="chart"></div>
+    </div>
+
+    <!-- 多车型对比 -->
+    <div class="chart-card">
+      <h3>多车型同工况能耗对比</h3>
+      <p class="chart-desc">60/90/110 吨级车型在相同工况下的净能耗与 SOC 消耗对比（按各自预设动力配置仿真）。</p>
+      <div id="chart-compare" class="chart"></div>
     </div>
 
   </section>

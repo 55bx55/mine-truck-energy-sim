@@ -11,15 +11,21 @@ const state = {
   meta: null,
   motorMap: null,
   cycles: null,
-  params: {},          // 当前车辆参数
-  currentCycle: 0,     // 时程曲线选中的工况
-  results: null,       // 仿真结果
+  params: {},           // 当前车辆参数
+  presets: [],          // 车型预设
+  currentCycle: 0,      // 当前选中工况（0-2 预设，3 自定义）
+  results: null,        // 3 预设工况仿真结果
+  customResult: null,   // 自定义工况仿真结果
+  customCycleData: null, // 自定义工况原始序列
   decompose: null,
   sensitivity: null,
+  compare: null,
 };
 
 const charts = {};
+const CYCLE_NAMES = ["重载上坡", "平路满载", "长下坡回收"];
 const CYCLE_COLORS = ["#dc2626", "#16a34a", "#2563eb"];
+const PRESET_COLORS = ["#0f766e", "#2563eb", "#d97706"];
 
 /* ---------------- 工具 ---------------- */
 const $ = (id) => document.getElementById(id);
@@ -33,9 +39,18 @@ async function api(path, body) {
   return res.json();
 }
 
-function fmt(v, digits = 2) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return Number(v).toFixed(digits);
+function linspace(a, b, n) {
+  if (n <= 0) return [];
+  if (n === 1) return [b];
+  return Array.from({ length: n }, (_, i) => a + (b - a) * i / (n - 1));
+}
+
+/* 当前选中的仿真结果 */
+function getCurrentResult() {
+  return state.currentCycle < 3 ? state.results[state.currentCycle] : state.customResult;
+}
+function getCurrentCycleName() {
+  return state.currentCycle < 3 ? CYCLE_NAMES[state.currentCycle] : (state.customCycleData?.name || "自定义工况");
 }
 
 /* ---------------- 初始化 ---------------- */
@@ -49,12 +64,15 @@ async function init() {
     state.meta = meta;
     state.motorMap = motorMap;
     state.cycles = cyclesData.cycles;
+    state.presets = meta.vehicle_presets || [];
     state.params = { ...meta.vehicle_params };
 
     $("api-dot").classList.add("ok");
     $("api-status").textContent = "引擎就绪 · 效率MAP峰值 " + meta.motor_map.peak_eta_pct + "%";
 
     renderParamPanel();
+    renderPresetSelect();
+    renderCustomPanel();
     renderCycleSwitch();
     initCharts();
     await refreshAll();
@@ -77,6 +95,7 @@ const PARAM_FIELDS = [
   { key: "eta_chg", label: "充电基准效率", step: 0.005, min: 0.85, max: 1.0 },
   { key: "batt_capacity_kWh", label: "电池容量 (kWh)", step: 10, min: 100, max: 800 },
   { key: "delta", label: "旋转质量系数", step: 0.01, min: 1.0, max: 1.3 },
+  { key: "soc_init", label: "初始 SOC", step: 0.05, min: 0.3, max: 1.0 },
 ];
 
 function renderParamPanel() {
@@ -97,11 +116,24 @@ function renderParamPanel() {
 
   $("btn-reset").addEventListener("click", async () => {
     state.params = { ...state.meta.vehicle_params };
+    $("preset-select").value = "";
     renderParamPanel();
     await refreshAll();
   });
 
   $("btn-run").addEventListener("click", () => refreshAll());
+}
+
+function renderPresetSelect() {
+  const sel = $("preset-select");
+  sel.innerHTML = '<option value="">手动配置</option>' +
+    state.presets.map((p) => `<option value="${p.key}">${p.name}</option>`).join("");
+  sel.addEventListener("change", () => {
+    const preset = state.presets.find((p) => p.key === sel.value);
+    if (!preset) return;
+    Object.assign(state.params, preset.params);
+    renderParamPanel();
+  });
 }
 
 function collectParams() {
@@ -110,17 +142,79 @@ function collectParams() {
   return out;
 }
 
+/* ---------------- 自定义工况 ---------------- */
+const CUSTOM_FIELDS = [
+  { key: "v_max", label: "最高速 (km/h)", step: 1, min: 5, max: 40, def: 20 },
+  { key: "t_acc", label: "加速时间 (s)", step: 5, min: 5, max: 120, def: 40 },
+  { key: "t_cruise", label: "匀速时间 (s)", step: 5, min: 0, max: 300, def: 120 },
+  { key: "t_dec", label: "减速时间 (s)", step: 5, min: 5, max: 120, def: 40 },
+  { key: "grade", label: "坡度 (%)", step: 0.5, min: -15, max: 15, def: 6 },
+  { key: "payload", label: "载重 (kg)", step: 5000, min: 0, max: 120000, def: 60000 },
+];
+
+function renderCustomPanel() {
+  const box = $("custom-group");
+  box.innerHTML = CUSTOM_FIELDS.map((f) => `
+    <div class="param-row">
+      <label for="c-${f.key}">${f.label}</label>
+      <input id="c-${f.key}" type="number" step="${f.step}" min="${f.min}" max="${f.max}" value="${f.def}">
+    </div>`).join("");
+
+  $("btn-custom").addEventListener("click", async () => {
+    const v = {};
+    CUSTOM_FIELDS.forEach((f) => {
+      const el = $(`c-${f.key}`);
+      v[f.key] = parseFloat(el.value);
+      if (Number.isNaN(v[f.key])) v[f.key] = f.def;
+    });
+
+    const tAcc = Math.max(1, Math.round(v.t_acc));
+    const tCrs = Math.max(0, Math.round(v.t_cruise));
+    const tDec = Math.max(1, Math.round(v.t_dec));
+    const speed = [
+      ...linspace(0, v.v_max, tAcc),
+      ...Array(tCrs).fill(v.v_max),
+      ...linspace(v.v_max, 0, tDec),
+    ];
+    const grade = Array(speed.length).fill(v.grade);
+    const payload = Array(speed.length).fill(v.payload);
+
+    state.customCycleData = { v: speed, grade, payload, name: `自定义(${v.v_max}km/h,${v.grade}%)` };
+    $("btn-custom").disabled = true;
+    $("btn-custom").textContent = "仿真中…";
+    try {
+      const res = await api("/api/simulate", {
+        params: collectParams(),
+        custom_cycle: state.customCycleData,
+      });
+      state.customResult = res.results[0];
+      state.currentCycle = 3;
+      renderCycleSwitch();
+      await refreshTimeseriesOnly();
+      $("api-status").textContent = "自定义工况完成 · " + state.customResult.E_total_kWh + " kWh";
+    } catch (e) {
+      console.error(e);
+      $("api-status").textContent = "自定义工况失败: " + e.message;
+    } finally {
+      $("btn-custom").disabled = false;
+      $("btn-custom").textContent = "生成并仿真";
+    }
+  });
+}
+
 /* ---------------- 工况切换 ---------------- */
 function renderCycleSwitch() {
   const box = $("cycle-switch");
-  box.innerHTML = state.cycles.map((c, i) => `
-    <button data-i="${i}" class="${i === state.currentCycle ? "active" : ""}">${c.name}</button>`).join("");
+  const labels = [...CYCLE_NAMES];
+  if (state.customResult) labels.push(state.customCycleData.name);
+  box.innerHTML = labels.map((name, i) => `
+    <button data-i="${i}" class="${i === state.currentCycle ? "active" : ""}">${name}</button>`).join("");
   box.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
     state.currentCycle = parseInt(btn.dataset.i, 10);
     [...box.children].forEach((b) => b.classList.toggle("active", b === btn));
-    await refreshTimeseries();
+    await refreshTimeseriesOnly();
   });
 }
 
@@ -131,6 +225,7 @@ function initCharts() {
   charts.decomp = echarts.init($("chart-decomp"));
   charts.ts = echarts.init($("chart-timeseries"));
   charts.sens = echarts.init($("chart-sens"));
+  charts.compare = echarts.init($("chart-compare"));
   window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.resize()));
 }
 
@@ -139,14 +234,25 @@ async function refreshAll() {
   $("btn-run").disabled = true;
   try {
     const body = { params: collectParams() };
-    const [sim, sens, decomp] = await Promise.all([
+    const [sim, sens, decomp, cmp] = await Promise.all([
       api("/api/simulate", { ...body, cycle_ids: [0, 1, 2] }),
       api("/api/sensitivity", body),
-      api("/api/decompose", { ...body, cycle_id: state.currentCycle }),
+      api("/api/decompose", {
+        ...body,
+        cycle_id: Math.min(state.currentCycle, 2),
+      }),
+      api("/api/compare", { cycle_ids: [0, 1, 2] }),
     ]);
     state.results = sim.results;
     state.sensitivity = sens;
     state.decompose = decomp;
+    state.compare = cmp;
+
+    // 自定义工况存在则一并重算
+    if (state.customCycleData) {
+      const cr = await api("/api/simulate", { params: body.params, custom_cycle: state.customCycleData });
+      state.customResult = cr.results[0];
+    }
 
     renderCards();
     renderMap();
@@ -154,6 +260,7 @@ async function refreshAll() {
     renderDecomp();
     renderTimeseries();
     renderSensitivity();
+    renderCompare();
   } catch (e) {
     console.error(e);
     $("api-status").textContent = "仿真失败: " + e.message;
@@ -162,35 +269,54 @@ async function refreshAll() {
   }
 }
 
-async function refreshTimeseries() {
-  const decomp = await api("/api/decompose", {
-    params: collectParams(), cycle_id: state.currentCycle,
-  });
+/* 仅刷新当前选中工况相关图（时程 / MAP / 分解），用于工况切换与自定义工况 */
+async function refreshTimeseriesOnly() {
+  const isCustom = state.currentCycle === 3;
+  const body = { params: collectParams() };
+  const decomp = await api("/api/decompose", isCustom
+    ? { ...body, custom_cycle: state.customCycleData }
+    : { ...body, cycle_id: state.currentCycle });
   state.decompose = decomp;
+  renderCards();
+  renderMap();
   renderDecomp();
   renderTimeseries();
 }
 
 /* ---------------- 概览卡片 ---------------- */
 function renderCards() {
-  const names = ["重载上坡", "平路满载", "长下坡回收"];
-  $("cards").innerHTML = state.results.map((r, i) => {
-    const eta = r.eta_avg_drive_weighted;
+  const cards = state.results.map((r, i) => {
     const pos = r.E_total_kWh >= 0;
+    const eta = r.eta_avg_drive_weighted;
     return `
       <div class="card ${i === 0 ? "highlight" : ""}">
-        <div class="c-name">${names[i]} · 净能耗</div>
+        <div class="c-name">${CYCLE_NAMES[i]} · 净能耗</div>
         <div class="c-val ${pos ? "pos" : "neg"}">${pos ? "" : "−"}${Math.abs(r.E_total_kWh).toFixed(2)} <small style="font-size:13px">kWh</small></div>
-        <div class="c-sub">驱动段平均效率（功率加权）：${eta === null ? "—" : (eta * 100).toFixed(1) + "%"}
-          <br>驱动 ${r.E_drive_kWh.toFixed(2)} kWh · 回收 ${r.E_regen_kWh.toFixed(2)} kWh</div>
+        <div class="c-sub">平均效率：${eta === null ? "—" : (eta * 100).toFixed(1) + "%"}
+          <br>驱动 ${r.E_drive_kWh.toFixed(2)} / 回收 ${r.E_regen_kWh.toFixed(2)} kWh
+          <br>SOC ${r.soc_delta_pct >= 0 ? "+" : ""}${r.soc_delta_pct.toFixed(2)} pp</div>
       </div>`;
-  }).join("");
+  });
+  if (state.customResult) {
+    const r = state.customResult;
+    const pos = r.E_total_kWh >= 0;
+    cards.push(`
+      <div class="card highlight">
+        <div class="c-name">${state.customCycleData.name} · 净能耗</div>
+        <div class="c-val ${pos ? "pos" : "neg"}">${pos ? "" : "−"}${Math.abs(r.E_total_kWh).toFixed(2)} <small style="font-size:13px">kWh</small></div>
+        <div class="c-sub">平均效率：${r.eta_avg_drive_weighted === null ? "—" : (r.eta_avg_drive_weighted * 100).toFixed(1) + "%"}
+          <br>驱动 ${r.E_drive_kWh.toFixed(2)} / 回收 ${r.E_regen_kWh.toFixed(2)} kWh
+          <br>SOC ${r.soc_delta_pct >= 0 ? "+" : ""}${r.soc_delta_pct.toFixed(2)} pp</div>
+      </div>`);
+  }
+  $("cards").innerHTML = cards.join("");
 }
 
 /* ---------------- 效率 MAP + 工作点 ---------------- */
 function renderMap() {
   const mm = state.motorMap;
-  const res = state.results[state.currentCycle];
+  const res = getCurrentResult();
+  if (!res) return;
 
   const heatData = [];
   for (let j = 0; j < mm.T.length; j++) {
@@ -200,10 +326,10 @@ function renderMap() {
   }
 
   const scatter = res.n_motor.map((n, k) => [n, Math.abs(res.T_motor[k])]);
-
   const extCurve = buildExtCurve(mm);
 
   charts.map.setOption({
+    title: { text: getCurrentCycleName() + " · 工作点", left: 8, top: 2, textStyle: { fontSize: 13, color: "#334155" } },
     tooltip: {
       formatter: (p) => {
         if (p.seriesType === "heatmap") {
@@ -215,7 +341,7 @@ function renderMap() {
         return "";
       },
     },
-    grid: { left: 70, right: 20, top: 30, bottom: 50 },
+    grid: { left: 70, right: 20, top: 40, bottom: 50 },
     xAxis: { type: "value", name: "转速 n (r/min)", min: 0, max: mm.n[mm.n.length - 1] },
     yAxis: { type: "value", name: "转矩 T (N·m)", min: 0, max: mm.T[mm.T.length - 1] },
     visualMap: {
@@ -258,12 +384,11 @@ function buildExtCurve(mm) {
 
 /* ---------------- 三工况能耗对比 ---------------- */
 function renderEnergy() {
-  const names = ["重载上坡", "平路满载", "长下坡回收"];
   charts.energy.setOption({
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { top: 0, data: ["驱动能耗", "回收能量"] },
     grid: { left: 60, right: 20, top: 40, bottom: 40 },
-    xAxis: { type: "category", data: names },
+    xAxis: { type: "category", data: CYCLE_NAMES },
     yAxis: { type: "value", name: "能量 (kWh)" },
     series: [
       {
@@ -283,6 +408,7 @@ function renderEnergy() {
 /* ---------------- 能量分解 ---------------- */
 function renderDecomp() {
   const d = state.decompose;
+  if (!d) return;
   const items = [
     ["坡度势能变化", d["坡度势能变化"]],
     ["电机铜损", d["电机铜损"]],
@@ -296,6 +422,7 @@ function renderDecomp() {
   ].filter(([, v]) => v > 0.005);
 
   charts.decomp.setOption({
+    title: { text: getCurrentCycleName(), left: 8, top: 2, textStyle: { fontSize: 13, color: "#334155" } },
     tooltip: {
       trigger: "item",
       formatter: (p) => `${p.name}<br>${p.value} kWh（${p.percent.toFixed(1)}%）`,
@@ -314,20 +441,24 @@ function renderDecomp() {
   }, true);
 }
 
-/* ---------------- 时程曲线 ---------------- */
+/* ---------------- 时程曲线（含 SOC） ---------------- */
 function renderTimeseries() {
-  const r = state.results[state.currentCycle];
+  const r = getCurrentResult();
+  if (!r) return;
   const t = r.n_motor.map((_, i) => i);
+  const socPct = r.soc.map((x) => (x * 100).toFixed(2));
 
   charts.ts.setOption({
+    title: { text: getCurrentCycleName(), left: 8, top: 2, textStyle: { fontSize: 13, color: "#334155" } },
     tooltip: { trigger: "axis" },
-    legend: { top: 0, data: ["电机效率", "轮边功率", "累积能耗"] },
-    grid: { left: 60, right: 90, top: 40, bottom: 40 },
+    legend: { top: 0, data: ["电机效率", "轮边功率", "累积能耗", "SOC"] },
+    grid: { left: 60, right: 100, top: 40, bottom: 40 },
     xAxis: { type: "category", data: t, name: "时间 (s)" },
     yAxis: [
       { type: "value", name: "效率 (%)", min: 50, max: 100, position: "left" },
       { type: "value", name: "功率 (kW)", position: "right" },
       { type: "value", name: "能耗 (kWh)", position: "right", offset: 55, splitLine: { show: false } },
+      { type: "value", name: "SOC (%)", position: "right", offset: 110, min: 0, max: 100, splitLine: { show: false } },
     ],
     series: [
       {
@@ -345,6 +476,12 @@ function renderTimeseries() {
         name: "累积能耗", type: "line",
         data: r.E_cum.map((x) => (x / 1000).toFixed(3)),
         yAxisIndex: 2, symbol: "none", lineStyle: { width: 2.4, color: "#111827" },
+      },
+      {
+        name: "SOC", type: "line",
+        data: socPct,
+        yAxisIndex: 3, symbol: "none",
+        lineStyle: { width: 2, color: "#7c3aed", type: "dashed" },
       },
     ],
   }, true);
@@ -381,6 +518,28 @@ function renderSensitivity() {
         label: { show: true, position: "right", formatter: (p) => "+" + p.value.toFixed(1) + "%", fontSize: 11, color: "#dc2626" },
       },
     ],
+  }, true);
+}
+
+/* ---------------- 多车型对比 ---------------- */
+function renderCompare() {
+  const d = state.compare;
+  if (!d) return;
+
+  charts.compare.setOption({
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    legend: { top: 0, data: d.presets },
+    grid: { left: 60, right: 20, top: 40, bottom: 40 },
+    xAxis: { type: "category", data: d.cycle_names },
+    yAxis: { type: "value", name: "净能耗 (kWh)" },
+    series: d.rows.map((row, i) => ({
+      name: row.name,
+      type: "bar",
+      data: row.cells.map((c) => c.E_total_kWh),
+      itemStyle: { color: PRESET_COLORS[i % PRESET_COLORS.length] },
+      barGap: "10%",
+      label: { show: true, position: "top", fontSize: 10, formatter: (p) => p.value.toFixed(1) },
+    })),
   }, true);
 }
 

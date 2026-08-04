@@ -80,6 +80,23 @@ def _build_cycle(name: str, t: np.ndarray, v: np.ndarray, grade: np.ndarray, pay
     return DriveCycle(name=name, t=t, v=v, a=a, grade=grade, payload=payload)
 
 
+def build_custom_cycle(v, grade, payload, name: str = "自定义工况") -> DriveCycle:
+    """由前端传入的速度/坡度/载重序列构造工况（加速度差分 + 高斯平滑）
+
+    参数
+    ----
+    v, grade, payload : 等长数组（v: km/h, grade: %, payload: kg）
+    """
+    v = np.asarray(v, dtype=np.float64)
+    grade = np.asarray(grade, dtype=np.float64)
+    payload = np.asarray(payload, dtype=np.float64)
+    n = len(v)
+    if not (len(grade) == n and len(payload) == n):
+        raise ValueError("v / grade / payload 长度必须一致")
+    t = np.arange(n, dtype=np.float64)
+    return _build_cycle(name, t, v, grade, payload)
+
+
 def build_default_cycles() -> list[DriveCycle]:
     """构造论文中的三种基准工况"""
 
