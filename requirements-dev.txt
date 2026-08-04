@@ -1,0 +1,4 @@
+# 开发/测试依赖（CI 与本地测试使用）
+-r requirements.txt
+pytest>=8.0
+httpx2>=0.3
