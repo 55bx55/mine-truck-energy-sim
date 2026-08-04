@@ -60,7 +60,7 @@ $$F_{total} = \underbrace{m g f_r \cos\alpha}_{滚动阻力} + \underbrace{\tfra
 
 $$\eta = \eta_{peak} \cdot f_n(n) \cdot f_T(T) \cdot (1-\delta_{cu}) \cdot (1-\delta_{fe}) \cdot (1-\delta_{low})$$
 
-其中 $f_n, f_T$ 为转速/转矩方向效率因子（不对称高斯），$\delta_{cu}$ 为铜损（与转矩平方成正比）、$\delta_{fe}$ 为铁损（高速显著）、$\delta_{low}$ 为低速附加损耗。峰值效率 93.5%，高效区（≥90%）平台约 2000–4000 r/min × 800–1600 N·m。
+其中 $f_n, f_T$ 为转速/转矩方向效率因子（不对称高斯），$\delta_{cu}$ 为铜损（与转矩平方成正比）、$\delta_{fe}$ 为铁损（高速显著）、$\delta_{low}$ 为低速附加损耗。模型峰值效率因子 93.5%（网格离散采样后实际峰值 91.4%），高效区（≥90%）平台约 2000–4000 r/min × 800–1600 N·m。
 
 ### 电池效率（C-rate 模型）
 
