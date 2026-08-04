@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>电动矿卡能耗预测与仿真分析系统</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1>电动矿卡能耗预测与仿真分析系统</h1>
+      <p class="subtitle">Efficiency-Map Based Energy Consumption Simulation for Electric Mining Trucks</p>
+    </div>
+    <div class="status">
+      <span class="dot" id="api-dot"></span>
+      <span id="api-status">引擎加载中…</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ============ 左栏：参数面板 ============ -->
+  <aside class="panel">
+    <div class="panel-head">
+      <h2>车辆参数</h2>
+      <button class="btn-reset" id="btn-reset" title="恢复默认参数">重置</button>
+    </div>
+    <div class="param-group" id="param-group"></div>
+    <button class="btn-run" id="btn-run">重新仿真</button>
+    <div class="panel-note">
+      <p>参数修改后点击「重新仿真」，右侧全部图表联动更新。</p>
+      <p>整备质量 30 t 对应 60 吨级电动矿卡典型配置。</p>
+    </div>
+  </aside>
+
+  <!-- ============ 右栏：可视化 ============ -->
+  <section class="content">
+
+    <!-- 概览卡片 -->
+    <div class="cards" id="cards"></div>
+
+    <!-- 效率 MAP -->
+    <div class="chart-card">
+      <h3>电机效率 MAP 与工作点轨迹</h3>
+      <p class="chart-desc">效率曲面基于实测 Map 特征构造（乘法损耗模型），黑色虚线为外特性边界；散点为所选工况的电机工作点轨迹。</p>
+      <div id="chart-map" class="chart chart-lg"></div>
+    </div>
+
+    <!-- 能耗对比 + 能量分解 -->
+    <div class="grid-2">
+      <div class="chart-card">
+        <h3>三工况能耗构成对比</h3>
+        <p class="chart-desc">驱动能耗与制动回收能量拆分，长下坡工况净能耗为负（能量回收大于消耗）。</p>
+        <div id="chart-energy" class="chart"></div>
+      </div>
+      <div class="chart-card">
+        <h3>能量损耗分解（当前工况）</h3>
+        <p class="chart-desc">电池能量去向分解：电机铜损/铁损/低速损耗/位置偏离损耗、传动损耗与行驶阻力损耗。</p>
+        <div id="chart-decomp" class="chart"></div>
+      </div>
+    </div>
+
+    <!-- 时程曲线 -->
+    <div class="chart-card">
+      <h3>工况时程曲线</h3>
+      <div class="chart-toolbar">
+        <p class="chart-desc">效率、轮边功率与累积能耗随时间演变。</p>
+        <div class="cycle-switch" id="cycle-switch"></div>
+      </div>
+      <div id="chart-timeseries" class="chart chart-lg"></div>
+    </div>
+
+    <!-- 敏感性分析 -->
+    <div class="chart-card">
+      <h3>参数敏感性分析（Tornado）</h3>
+      <p class="chart-desc">基准工况为重载上坡；对载重质量、滚动阻力系数、传动效率、主减速比做 ±20% 单因素摄动，考察工况总能耗变化率。条长越长，该参数对能耗影响越大。</p>
+      <div id="chart-sens" class="chart"></div>
+    </div>
+
+  </section>
+</main>
+
+<footer class="footer">
+  <p>基于效率 MAP 查表与纵向动力学耦合的电动矿卡能耗仿真 · 算法移植自毕业设计 MATLAB 仿真程序并通过一致性对账</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
