@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .core import decomposition, sensitivity, simulation
+from .core import comparison, decomposition, sensitivity, simulation
 from .core.cycles import build_custom_cycle, build_default_cycles
 from .core.efficiency import MotorEfficiencyMap
 from .core.vehicle import VehicleParams
@@ -178,6 +178,30 @@ def compare(payload: dict):
         "cycle_names": [all_cycles[i].name for i in cycle_ids],
         "rows": rows,
     }
+
+
+@app.post("/api/compare-efficiency")
+def compare_efficiency(payload: dict):
+    """效率 MAP 与恒定电机效率模型的能耗对比。
+
+    body: {"params": {...}, "cycle_ids": [0, 1, 2], "eta_constant": 0.90}
+    """
+    params = _resolve_params(payload.get("params"))
+    cycle_ids = payload.get("cycle_ids") or [0, 1, 2]
+    eta_constant = float(payload.get("eta_constant", 0.90))
+    all_cycles = _load_cycles()
+    eff_map = _load_map()
+
+    results = []
+    for cid in cycle_ids:
+        cycle = all_cycles[int(cid)]
+        map_result = simulation.simulate_cycle(cycle, eff_map, params)
+        results.append(
+            comparison.compare_efficiency_models(
+                cycle, map_result, params, eta_constant
+            ).to_dict()
+        )
+    return {"eta_constant": eta_constant, "results": results}
 
 
 @app.post("/api/sensitivity")
