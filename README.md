@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009688)
 ![ECharts](https://img.shields.io/badge/ECharts-5-AA344D)
-![tests](https://img.shields.io/badge/tests-29%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-32%20passed-brightgreen)
 
 ---
 
@@ -24,9 +24,10 @@
 - **交互式参数面板**：修改整备质量、传动比、阻力系数等 10 项车辆参数 + 初始 SOC，一键重算并联动刷新全部图表；内置 60/90/110 吨级车型预设
 - **自定义工况编辑器**：梯形速度曲线（加速-匀速-减速）+ 坡度 + 载重参数化生成任意工况，一键仿真并接入全部联动视图
 - **多车型对比**：同工况下 60/90/110 吨级车型的净能耗与回收能量横向对比
-- **五类可视化**：效率 MAP 热力图叠加工作点轨迹、三工况能耗构成对比、效率/功率/能耗/SOC 时程曲线、能量损耗分解环形图、参数敏感性 Tornado 图
+- **七类可视化**：效率 MAP 热力图叠加工作点轨迹、三工况能耗构成对比、效率/功率/能耗/SOC 时程曲线、能量损耗分解环形图、参数敏感性 Tornado 图、多车型能耗对比、效率模型对比
 - **能量损耗分解**：将电池能量去向分解为电机铜损、铁损、低速损耗、位置偏离损耗、传动损耗与行驶阻力损耗（串联级联法）
 - **参数敏感性分析**：对载重、滚动阻力、传动效率、主减速比做 ±20% 单因素摄动，量化各参数对能耗的影响权重
+- **效率模型对比**：在相同工况下对比效率 MAP 与恒定效率（默认 90%）假设，量化简化效率模型带来的能耗偏差
 - **数据自包含**：效率 MAP 与工况数据均由程序生成，无需 MATLAB 及原始数据文件，clone 即用
 
 ## 架构
@@ -41,6 +42,7 @@
 │  FastAPI 后端                                        │
 │  /api/simulate  /api/sensitivity  /api/decompose     │
 │  /api/motor-map /api/cycles /api/meta                │
+│  /api/compare  /api/compare-efficiency               │
 └────────────────────────┬─────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────┐
@@ -106,6 +108,7 @@ python -m pytest tests/ -v
 | POST | `/api/sensitivity` | 参数敏感性分析 |
 | POST | `/api/decompose` | 能量损耗分解（支持 cycle_id 或 custom_cycle） |
 | POST | `/api/compare` | 多车型同工况能耗对比 |
+| POST | `/api/compare-efficiency` | 效率 MAP 与恒定效率模型的能耗对比 |
 | GET | `/docs` | 交互式 API 文档（FastAPI 自动生成） |
 
 自定义工况仿真示例：
@@ -159,6 +162,7 @@ mine-truck-energy-sim/
 │       ├── simulation.py     # 能耗仿真引擎（含 SOC 跟踪）
 │       ├── map_generator.py  # 效率曲面生成
 │       ├── decomposition.py  # 能量分解
+│       ├── comparison.py     # 效率 MAP 与恒定效率模型对比
 │       ├── sensitivity.py    # 敏感性分析
 │       └── cycles.py         # 典型矿山工况 + 自定义工况构造
 ├── frontend/                 # 纯静态前端（ECharts 5）
@@ -167,7 +171,7 @@ mine-truck-energy-sim/
 │   └── js/app.js
 ├── docs/                     # 截图等文档素材
 ├── data/                     # 程序生成的数据（已提交）
-├── tests/                    # 单元测试与 API 集成测试（29 项）
+├── tests/                    # 单元测试与 API 集成测试（32 项）
 ├── scripts/                  # 数据准备 / 对账 / 冒烟测试
 ├── requirements.txt
 └── LICENSE

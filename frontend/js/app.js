@@ -20,6 +20,7 @@ const state = {
   decompose: null,
   sensitivity: null,
   compare: null,
+  efficiencyComparison: null,
 };
 
 const charts = {};
@@ -223,6 +224,7 @@ function initCharts() {
   charts.map = echarts.init($("chart-map"));
   charts.energy = echarts.init($("chart-energy"));
   charts.decomp = echarts.init($("chart-decomp"));
+  charts.efficiencyCompare = echarts.init($("chart-efficiency-compare"));
   charts.ts = echarts.init($("chart-timeseries"));
   charts.sens = echarts.init($("chart-sens"));
   charts.compare = echarts.init($("chart-compare"));
@@ -234,7 +236,7 @@ async function refreshAll() {
   $("btn-run").disabled = true;
   try {
     const body = { params: collectParams() };
-    const [sim, sens, decomp, cmp] = await Promise.all([
+    const [sim, sens, decomp, cmp, effCmp] = await Promise.all([
       api("/api/simulate", { ...body, cycle_ids: [0, 1, 2] }),
       api("/api/sensitivity", body),
       api("/api/decompose", {
@@ -242,11 +244,13 @@ async function refreshAll() {
         cycle_id: Math.min(state.currentCycle, 2),
       }),
       api("/api/compare", { cycle_ids: [0, 1, 2] }),
+      api("/api/compare-efficiency", { ...body, cycle_ids: [0, 1, 2], eta_constant: 0.90 }),
     ]);
     state.results = sim.results;
     state.sensitivity = sens;
     state.decompose = decomp;
     state.compare = cmp;
+    state.efficiencyComparison = effCmp;
 
     // 自定义工况存在则一并重算
     if (state.customCycleData) {
@@ -258,6 +262,7 @@ async function refreshAll() {
     renderMap();
     renderEnergy();
     renderDecomp();
+    renderEfficiencyComparison();
     renderTimeseries();
     renderSensitivity();
     renderCompare();
@@ -267,6 +272,46 @@ async function refreshAll() {
   } finally {
     $("btn-run").disabled = false;
   }
+}
+
+/* ---------------- 效率 MAP 与恒定效率对比 ---------------- */
+function renderEfficiencyComparison() {
+  const d = state.efficiencyComparison;
+  if (!d) return;
+  const rows = d.results;
+  const etaPct = (d.eta_constant * 100).toFixed(0);
+  charts.efficiencyCompare.setOption({
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "shadow" },
+      formatter: (ps) => {
+        const row = rows[ps[0].dataIndex];
+        return `${row.cycle_name}<br>` +
+          ps.map((p) => `${p.seriesName}: ${p.value.toFixed(3)} kWh`).join("<br>") +
+          `<br>恒定效率相对偏差: ${row.delta_pct >= 0 ? "+" : ""}${row.delta_pct.toFixed(2)}%`;
+      },
+    },
+    legend: { top: 0, data: ["效率 MAP", `恒定效率 ${etaPct}%`] },
+    grid: { left: 70, right: 30, top: 46, bottom: 50, containLabel: true },
+    xAxis: { type: "category", data: rows.map((r) => r.cycle_name) },
+    yAxis: { type: "value", name: "净能耗 (kWh)", nameLocation: "middle", nameGap: 48 },
+    series: [
+      {
+        name: "效率 MAP", type: "bar", data: rows.map((r) => r.E_map_kWh),
+        itemStyle: { color: "#0f766e" }, barGap: "12%",
+      },
+      {
+        name: `恒定效率 ${etaPct}%`, type: "bar", data: rows.map((r) => r.E_constant_kWh),
+        itemStyle: { color: "#d97706" },
+        label: {
+          show: true, position: "top", fontSize: 10,
+          formatter: (p) => {
+            const delta = rows[p.dataIndex].delta_pct;
+            return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
+          },
+        },
+      },
+    ],
+  }, true);
 }
 
 /* 仅刷新当前选中工况相关图（时程 / MAP / 分解），用于工况切换与自定义工况 */
@@ -318,6 +363,11 @@ function renderMap() {
   const res = getCurrentResult();
   if (!res) return;
 
+  // 后端为减小响应体做了降采样；坐标轴使用整齐刻度，避免把长小数
+  // （例如 6823.529）直接渲染在图表边缘而造成文字重叠。
+  const nAxisMax = Math.ceil(mm.n[mm.n.length - 1] / 1000) * 1000;
+  const tAxisMax = Math.ceil(mm.T[mm.T.length - 1] / 500) * 500;
+
   const heatData = [];
   for (let j = 0; j < mm.T.length; j++) {
     for (let i = 0; i < mm.n.length; i++) {
@@ -341,9 +391,17 @@ function renderMap() {
         return "";
       },
     },
-    grid: { left: 70, right: 20, top: 40, bottom: 50 },
-    xAxis: { type: "value", name: "转速 n (r/min)", min: 0, max: mm.n[mm.n.length - 1] },
-    yAxis: { type: "value", name: "转矩 T (N·m)", min: 0, max: mm.T[mm.T.length - 1] },
+    grid: { left: 82, right: 28, top: 52, bottom: 78 },
+    xAxis: {
+      type: "value", name: "转速 n (r/min)", nameLocation: "middle", nameGap: 36,
+      min: 0, max: nAxisMax, interval: 1000,
+      axisLabel: { formatter: (value) => value.toLocaleString() },
+    },
+    yAxis: {
+      type: "value", name: "转矩 T (N·m)", nameLocation: "middle", nameGap: 58,
+      min: 0, max: tAxisMax, interval: 500,
+      axisLabel: { formatter: (value) => value.toLocaleString() },
+    },
     visualMap: {
       min: 60, max: 95, calculable: true,
       orient: "horizontal", left: "center", bottom: 0,
@@ -387,7 +445,7 @@ function renderEnergy() {
   charts.energy.setOption({
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { top: 0, data: ["驱动能耗", "回收能量"] },
-    grid: { left: 60, right: 20, top: 40, bottom: 40 },
+    grid: { left: 64, right: 30, top: 42, bottom: 48, containLabel: true },
     xAxis: { type: "category", data: CYCLE_NAMES },
     yAxis: { type: "value", name: "能量 (kWh)" },
     series: [
@@ -427,10 +485,10 @@ function renderDecomp() {
       trigger: "item",
       formatter: (p) => `${p.name}<br>${p.value} kWh（${p.percent.toFixed(1)}%）`,
     },
-    legend: { type: "scroll", orient: "vertical", right: 0, top: "middle", textStyle: { fontSize: 12 } },
+    legend: { type: "scroll", orient: "vertical", right: 8, top: "middle", textStyle: { fontSize: 12 } },
     series: [{
       name: "能量去向", type: "pie",
-      radius: ["38%", "68%"], center: ["38%", "52%"],
+      radius: ["36%", "64%"], center: ["34%", "52%"],
       avoidLabelOverlap: true,
       itemStyle: { borderColor: "#fff", borderWidth: 2 },
       label: { show: false },
@@ -452,13 +510,25 @@ function renderTimeseries() {
     title: { text: getCurrentCycleName(), left: 8, top: 2, textStyle: { fontSize: 13, color: "#334155" } },
     tooltip: { trigger: "axis" },
     legend: { top: 0, data: ["电机效率", "轮边功率", "累积能耗", "SOC"] },
-    grid: { left: 60, right: 100, top: 40, bottom: 40 },
-    xAxis: { type: "category", data: t, name: "时间 (s)" },
+    grid: { left: 72, right: 168, top: 46, bottom: 54, containLabel: false },
+    xAxis: { type: "category", data: t, name: "时间 (s)", nameLocation: "middle", nameGap: 34 },
     yAxis: [
-      { type: "value", name: "效率 (%)", min: 50, max: 100, position: "left" },
-      { type: "value", name: "功率 (kW)", position: "right" },
-      { type: "value", name: "能耗 (kWh)", position: "right", offset: 55, splitLine: { show: false } },
-      { type: "value", name: "SOC (%)", position: "right", offset: 110, min: 0, max: 100, splitLine: { show: false } },
+      {
+        type: "value", name: "效率 (%)", min: 50, max: 100, position: "left",
+        nameLocation: "middle", nameGap: 46,
+      },
+      {
+        type: "value", name: "功率 (kW)", position: "right",
+        nameLocation: "middle", nameGap: 42,
+      },
+      {
+        type: "value", name: "能耗 (kWh)", position: "right", offset: 58,
+        nameLocation: "middle", nameGap: 42, splitLine: { show: false },
+      },
+      {
+        type: "value", name: "SOC (%)", position: "right", offset: 116, min: 0, max: 100,
+        nameLocation: "middle", nameGap: 42, splitLine: { show: false },
+      },
     ],
     series: [
       {
@@ -501,8 +571,8 @@ function renderSensitivity() {
       },
     },
     legend: { top: 0, data: ["−20% 摄动", "+20% 摄动"] },
-    grid: { left: 130, right: 60, top: 40, bottom: 30 },
-    xAxis: { type: "value", name: "能耗变化率 (%)" },
+    grid: { left: 134, right: 82, top: 44, bottom: 38, containLabel: false },
+    xAxis: { type: "value", name: "能耗变化率 (%)", nameLocation: "middle", nameGap: 32 },
     yAxis: { type: "category", data: rows.map((r) => r.display_name), inverse: true },
     series: [
       {
@@ -529,9 +599,9 @@ function renderCompare() {
   charts.compare.setOption({
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { top: 0, data: d.presets },
-    grid: { left: 60, right: 20, top: 40, bottom: 40 },
+    grid: { left: 64, right: 34, top: 42, bottom: 48, containLabel: true },
     xAxis: { type: "category", data: d.cycle_names },
-    yAxis: { type: "value", name: "净能耗 (kWh)" },
+    yAxis: { type: "value", name: "净能耗 (kWh)", nameLocation: "middle", nameGap: 48 },
     series: d.rows.map((row, i) => ({
       name: row.name,
       type: "bar",
