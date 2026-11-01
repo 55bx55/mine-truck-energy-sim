@@ -120,6 +120,23 @@ class TestAPI:
         e110 = d["rows"][2]["cells"][0]["E_total_kWh"]
         assert e110 > e60
 
+    def test_efficiency_model_comparison(self, client):
+        r = client.post("/api/compare-efficiency", json={"cycle_ids": [0, 1, 2]})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["eta_constant"] == pytest.approx(0.90)
+        assert len(d["results"]) == 3
+        uphill = d["results"][0]
+        assert uphill["E_constant_kWh"] < uphill["E_map_kWh"]
+
+    def test_compare_efficiency_rejects_invalid_eta(self, client):
+        for bad in (0, -0.5, 1.5, "abc"):
+            r = client.post(
+                "/api/compare-efficiency",
+                json={"cycle_ids": [0], "eta_constant": bad},
+            )
+            assert r.status_code == 400
+
     def test_meta_presets(self, client):
         meta = client.get("/api/meta").json()
         keys = {p["key"] for p in meta["vehicle_presets"]}

@@ -18,6 +18,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from core.battery import battery_efficiency  # noqa: E402
+from core.comparison import compare_efficiency_models, simulate_constant_efficiency  # noqa: E402
 from core.cycles import build_default_cycles  # noqa: E402
 from core.decomposition import decompose_cycle  # noqa: E402
 from core.efficiency import MotorEfficiencyMap  # noqa: E402
@@ -163,6 +164,22 @@ class TestSimulationAgainstMatlab:
     def test_cumulative_energy_monotonic_shape(self, cycles, eff_map, param):
         r = simulate_all(cycles, eff_map, param)[0]
         assert r.E_cum[-1] == pytest.approx(r.E_total, abs=0.05)
+
+
+# ----------------------------------------------------------------------
+# 4.1 效率 MAP 与恒定效率模型对比
+# ----------------------------------------------------------------------
+class TestEfficiencyComparison:
+    def test_constant_efficiency_returns_energy(self, cycles, param):
+        energy = simulate_constant_efficiency(cycles[0], param, eta_constant=0.90)
+        assert energy > 0
+
+    def test_map_and_constant_models_are_distinguishable(self, cycles, eff_map, param):
+        map_result = simulate_cycle(cycles[0], eff_map, param)
+        result = compare_efficiency_models(cycles[0], map_result, param, eta_constant=0.90)
+        assert result.E_map_kWh == pytest.approx(map_result.E_total / 1000.0)
+        assert result.E_constant_kWh < result.E_map_kWh
+        assert result.delta_pct < 0
 
 
 # ----------------------------------------------------------------------
