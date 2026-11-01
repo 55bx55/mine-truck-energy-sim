@@ -11,7 +11,8 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141-009688)
 ![ECharts](https://img.shields.io/badge/ECharts-5-AA344D)
-![tests](https://img.shields.io/badge/tests-33%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-37%20passed-brightgreen)
+![CI](https://github.com/55bx55/mine-truck-energy-sim/actions/workflows/ci.yml/badge.svg)
 
 ---
 
@@ -56,6 +57,8 @@
 │  map_generator.py  乘法损耗模型效率曲面生成           │
 │  decomposition.py  能量损耗分解（串联级联）           │
 │  sensitivity.py  单因素摄动敏感性分析                │
+│  cycles.py      典型矿山工况 + 自定义工况构造         │
+│  comparison.py  效率 MAP 与恒定效率模型对比           │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -103,6 +106,7 @@ python -m pytest tests/ -v
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/health` | 健康检查，返回 `{"status":"ok"}` |
 | GET | `/api/meta` | 默认车辆参数、车型预设、工况列表、MAP 峰值 |
 | GET | `/api/motor-map` | 效率 MAP 网格数据（可降采样） |
 | GET | `/api/cycles` | 三工况时间序列 |
@@ -199,7 +203,7 @@ mine-truck-energy-sim/
 │   └── js/app.js
 ├── docs/                     # 截图等文档素材
 ├── data/                     # 程序生成的数据（已提交）
-├── tests/                    # 单元测试与 API 集成测试（33 项）
+├── tests/                    # 单元测试与 API 集成测试（37 项）
 ├── scripts/                  # 数据准备 / 对账 / 冒烟测试
 ├── ml/                       # 数据驱动代理模型实验
 │   ├── data.py               # 工况采样 + 26 维特征工程 + 数据集构建
